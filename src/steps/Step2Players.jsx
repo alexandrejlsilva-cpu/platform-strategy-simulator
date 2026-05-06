@@ -31,7 +31,12 @@ export default function Step2Players() {
         body: JSON.stringify({ business }),
       });
       const data = await res.json();
-      if (data.error) throw new Error(data.error);
+      if (data.error) {
+        const msg = data.error.includes('503') || data.error.includes('UNAVAILABLE') || data.error.includes('high demand')
+          ? 'AI is busy right now. Please try again in a moment.'
+          : 'Could not load suggestions. Try again.';
+        throw new Error(msg);
+      }
       setAiSuggestions(data.players || []);
       setLoaded(true);
     } catch (e) {

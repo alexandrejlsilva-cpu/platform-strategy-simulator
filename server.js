@@ -18,6 +18,21 @@ app.use(express.json({ limit: '2mb' }));
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+async function withRetry(fn, retries = 3, delayMs = 1500) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const is503 = err.message?.includes('503') || err.message?.includes('UNAVAILABLE') || err.message?.includes('high demand');
+      if (is503 && i < retries - 1) {
+        await new Promise(r => setTimeout(r, delayMs * (i + 1)));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 function toGeminiContents(history) {
   return history.map(m => ({
     role: m.role === 'assistant' ? 'model' : 'user',
@@ -66,10 +81,10 @@ app.post('/api/strategy', async (req, res) => {
   }
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await withRetry(() => ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: buildStrategyPrompt(business, players, dynamics, interviewHistory),
-    });
+    }));
 
     const text = response.text;
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -90,7 +105,7 @@ app.post('/api/suggest-players', async (req, res) => {
   }
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await withRetry(() => ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: `Given this business idea, suggest 5 distinct player types that would participate in this ecosystem.
 Return ONLY a JSON array — no explanation, no markdown.
@@ -112,7 +127,7 @@ JSON format (exactly):
 ]
 
 Make the suggestions specific and realistic for THIS business. Avoid generic labels.`,
-    });
+    }));
 
     const text = response.text;
     const match = text.match(/\[[\s\S]*\]/);
